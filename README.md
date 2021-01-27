@@ -1,4 +1,4 @@
-# Invariant Representation for Continual Learning
+# Learning Invariant Representation for Continual Learning
 This is the official PyTorch implementation for the [Learning Invariant Representation for Continual Learning](https://arxiv.org/abs/2101.06162) paper in Meta-Learning for Computer Vision Workshop at the 35th AAAI Conference on Artificial Intelligence (AAAI-2021).
 
 # Abstract
