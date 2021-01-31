@@ -1,3 +1,6 @@
+# Author: Ghada Sokar et al.
+# This is the implementation for the Learning Invariant Representation for Continual Learning paper in AAAI workshop on Meta-Learning for Computer Vision
+
 import numpy as np
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
@@ -24,8 +27,8 @@ def get_test_loader(test_dataset,test_batch_size):
 
 def load_data():
     transform = transforms.Compose([transforms.ToTensor()])
-    full_dataset = datasets.MNIST('../data', train=True, download=True, transform=transform)
-    test_dataset = datasets.MNIST('../data', train=False, transform=transform)
+    full_dataset = datasets.MNIST('./data', train=True, download=True, transform=transform)
+    test_dataset = datasets.MNIST('./data', train=False, transform=transform)
     return full_dataset,test_dataset
 
 def task_construction(task_labels):

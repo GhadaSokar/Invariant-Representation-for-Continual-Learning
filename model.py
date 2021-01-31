@@ -1,3 +1,6 @@
+# Author: Ghada Sokar et al.
+# This is the implementation for the Learning Invariant Representation for Continual Learning paper in AAAI workshop on Meta-Learning for Computer Vision
+
 import numpy as np
 from torch.autograd import Variable
 import torch.nn as nn

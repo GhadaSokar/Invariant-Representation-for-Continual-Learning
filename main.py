@@ -1,6 +1,17 @@
+# Author: Ghada Sokar et al.
+# This is the implementation for the Learning Invariant Representation for Continual Learning paper in AAAI workshop on Meta-Learning for Computer Vision
+# if you use part of this code, please cite the following article:
+# @inproceedings{sokar2021learning,
+#       title={Learning Invariant Representation for Continual Learning}, 
+#       author={Ghada Sokar and Decebal Constantin Mocanu and Mykola Pechenizkiy},
+#       booktitle={Meta-Learning for Computer Vision Workshop at the 35th AAAI Conference on Artificial Intelligence (AAAI-21)},
+#       year={2021},
+# }  
+
 import argparse
 import glob
 import os
+import sys
 import itertools
 
 from model import *
@@ -56,32 +67,33 @@ def check_args(args):
         os.remove(f)
     return args
 
-def visualize(args, test_loader, encoder, decoder, epoch, n_classes, curr_task_labels):
+def visualize(args, test_loader, encoder, decoder, epoch, n_classes, curr_task_labels, device):
     plotter = plot_utils.plot_samples(args.results_path, args.n_img_x, args.n_img_y, args.img_size, args.img_size)
     # plot samples of the reconstructed images from the first batch of the test set of the current task
-    for test_batch_idx, (test_data, test_target) in enumerate(test_loader):                   
+    for test_batch_idx, (test_data, test_target) in enumerate(test_loader):  
+        test_data, test_target = test_data.to(device), test_target.to(device)                  
         x = test_data[0:plotter.n_total_imgs, :]
         x_id = test_target[0:plotter.n_total_imgs]
-        x_id_onehot = get_categorical(x_id,n_classes)
+        x_id_onehot = get_categorical(x_id,n_classes).to(device)
         encoder.eval()
         decoder.eval()
         with torch.no_grad():
             z,_,_ = encoder(x)
             reconstructed_x = decoder(torch.cat([z, x_id_onehot], dim=1))
             reconstructed_x = reconstructed_x.reshape(plotter.n_total_imgs, args.img_size, args.img_size)
-            plotter.save_images(x, name="/x_epoch_%02d" %(epoch) + ".jpg")
-            plotter.save_images(reconstructed_x, name="/reconstructed_x_epoch_%02d" %(epoch) + ".jpg")
+            plotter.save_images(x.cpu().data, name="/x_epoch_%02d" %(epoch) + ".jpg")
+            plotter.save_images(reconstructed_x.cpu().data, name="/reconstructed_x_epoch_%02d" %(epoch) + ".jpg")
         break
     
     #plot pseudo random samples from the previous learned tasks
     z = Variable(Tensor(np.random.normal(0, 1, (plotter.n_total_imgs, args.latent_dim))))
     z_id = np.random.randint(0, curr_task_labels[-1]+1, size=[plotter.n_total_imgs])  
-    z_id_one_hot = get_categorical(z_id, n_classes)
+    z_id_one_hot = get_categorical(z_id, n_classes).to(device)
     decoder.eval()
     with torch.no_grad():
         pseudo_samples = decoder(torch.cat([z,Variable(Tensor(z_id_one_hot))],1))
         pseudo_samples = pseudo_samples.reshape(plotter.n_total_imgs, args.img_size, args.img_size)
-        plotter.save_images(pseudo_samples, name="/pseudo_sample_epoch_%02d" % (epoch) + ".jpg")
+        plotter.save_images(pseudo_samples.cpu().data, name="/pseudo_sample_epoch_%02d" % (epoch) + ".jpg")
 
 def get_categorical(labels, n_classes=10):
     cat = np.array(labels.data.tolist())
@@ -89,7 +101,7 @@ def get_categorical(labels, n_classes=10):
     cat = torch.from_numpy(cat)
     return Variable(cat)
 
-def generate_pseudo_samples(task_id, latent_dim, curr_task_labels, decoder, replay_count, n_classes=10):
+def generate_pseudo_samples(device, task_id, latent_dim, curr_task_labels, decoder, replay_count, n_classes=10):
     gen_count = sum(replay_count[0:task_id])
     z = Variable(Tensor(np.random.normal(0, 1, (gen_count, latent_dim))))    
     # this can be used if we want to replay different number of samples for each task
@@ -100,7 +112,7 @@ def generate_pseudo_samples(task_id, latent_dim, curr_task_labels, decoder, repl
             x_id_ = np.concatenate((x_id_,np.random.randint(curr_task_labels[i][0], curr_task_labels[i][-1]+1, size=[replay_count[i]])))
 
     np.random.shuffle(x_id_)
-    x_id_one_hot = get_categorical(x_id_, n_classes)
+    x_id_one_hot = get_categorical(x_id_, n_classes).to(device)
     decoder.eval()
     with torch.no_grad():
         x = decoder(torch.cat([z,Variable(Tensor(x_id_one_hot))], 1))
@@ -141,7 +153,7 @@ def train(args, optimizer_cvae, optimizer_C, encoder, decoder,classifer, train_l
             encoder.zero_grad()
             decoder.zero_grad()
             classifer.zero_grad()
-            y_onehot = get_categorical(target, args.n_classes)
+            y_onehot = get_categorical(target, args.n_classes).to(device)
             encoded_imgs,z_mu,z_var = encoder(data)
             decoded_imgs = decoder(torch.cat([encoded_imgs, y_onehot], dim=1))
             kl_loss = 0.5 * torch.sum(torch.exp(z_var) + z_mu**2 - 1. - z_var)/args.batch_size
@@ -172,7 +184,7 @@ def train(args, optimizer_cvae, optimizer_C, encoder, decoder,classifer, train_l
             
         if  epoch%2==0 or epoch+1 == args.num_epochs:
            test_acc = evaluate(encoder, classifer, task_id, device, test_loader)
-           visualize(args, test_loader, encoder, decoder, epoch, args.n_classes, curr_task_labels)
+           visualize(args, test_loader, encoder, decoder, epoch, args.n_classes, curr_task_labels, device)
 
     return test_acc
 
@@ -201,10 +213,10 @@ def main(args):
     encoder = Encoder(img_shape, args.n_hidden_cvae, args.latent_dim)
     decoder = Decoder(img_shape, args.n_hidden_cvae, args.latent_dim, n_classes, use_label=True)
     classifier = Classifier(img_shape, args.latent_dim, args.n_hidden_specific, args.n_hidden_classifier, n_classes)
-    if use_cuda:
-        encoder.cuda()
-        decoder.cuda()
-        classifier.cuda()
+    
+    encoder.to(device)
+    decoder.to(device)
+    classifier.to(device)
 
     ## OPTIMIZERS ##
     optimizer_cvae = torch.optim.Adam(itertools.chain(encoder.parameters(), decoder.parameters()), lr=args.learn_rate)
@@ -218,15 +230,16 @@ def main(args):
     #----------------------------------------------------------------------#
     for task_id in range(num_tasks):
         print("Strat training task#" + str(task_id))
-        if task_id>0:
+        sys.stdout.flush()
+        if task_id>0:            
             # generate pseudo-samples of previous tasks
-            gen_x,gen_y = generate_pseudo_samples(task_id, args.latent_dim, task_labels, decoder, num_replayed)
+            gen_x,gen_y = generate_pseudo_samples(device, task_id, args.latent_dim, task_labels, decoder, num_replayed)
             gen_x = gen_x.reshape([gen_x.shape[0],img_shape[1],img_shape[2]])
             train_dataset[task_id-1].data = (gen_x*255).type(torch.uint8)
             train_dataset[task_id-1].targets = Variable(Tensor(gen_y)).type(torch.long)
             # concatenate the pseduo samples of previous tasks with the data of the current task
-            train_dataset[task_id].data = torch.cat((train_dataset[task_id].data,train_dataset[task_id-1].data))
-            train_dataset[task_id].targets =  torch.cat((train_dataset[task_id].targets, train_dataset[task_id-1].targets))
+            train_dataset[task_id].data = torch.cat((train_dataset[task_id].data,train_dataset[task_id-1].data.cpu()))
+            train_dataset[task_id].targets =  torch.cat((train_dataset[task_id].targets, train_dataset[task_id-1].targets.cpu()))
 
         train_loader = data_utils.get_train_loader(train_dataset[task_id], args.batch_size)
         test_loader = data_utils.get_test_loader(test_dataset[task_id], args.test_batch_size)
@@ -235,6 +248,7 @@ def main(args):
         test_acc = train(args, optimizer_cvae, optimizer_C, encoder, decoder, classifier, train_loader, test_loader, task_labels[task_id], task_id, device)
         acc_of_task_t_at_time_t.append(test_acc)
         print('\n')
+        sys.stdout.flush()
     #------------------------------------------------------------------------------------------#
     #----- Performance on each task after training the whole sequence -----#
     #----------------------------------------------------------------------#
